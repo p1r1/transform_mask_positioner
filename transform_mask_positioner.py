@@ -251,19 +251,6 @@ class Transform_Mask_Positioner(Extension):
             == QMessageBox.No
         ):
             return
-        
-        # check process done before if it is stop
-        is_done_before = False
-        try:
-            is_done_before = doc.get(doc.fileName(), {}).get("is_Tmask_fitted_shared", None)
-            print(is_done_before)
-        except:
-            print("can not get is_done_before(aka is_Tmask_fitted_shared)")
-            
-        if is_done_before:
-            return
-        elif is_done_before is None:
-            print("can not get is_done_before(aka is_Tmask_fitted_shared)")
 
         # progress bar
         total_groups = sum(
@@ -335,12 +322,6 @@ class Transform_Mask_Positioner(Extension):
             # progress
             progress.setValue(progress.value() + 1)
             QApplication.processEvents()
-
-        # Extension 1: Set shared variable (whole krita instance not saved)
-        try:
-            doc.setdefault(doc.fileName(), {})["is_Tmask_fitted_shared"] = True
-        except:
-            print("is_Tmask_fitted_shared not set!!")
             
         progress.close()
         QMessageBox.information(None, "Done", "Transform Masks fitted to rectangles!")
