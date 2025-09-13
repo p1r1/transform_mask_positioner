@@ -37,13 +37,10 @@ class Transform_Mask_Positioner(Extension):
         subaction1.triggered.connect(self.action_do_for_selected)
 
     # scriptttt
-
     def get_reference_rectangles(self, vl_name_prefix):
         """Extract all reference rectangles from vector layers."""
         doc = Krita.instance().activeDocument()
         rectangles = {}
-
-        QMessageBox.information(None, "Error", root_node.name())
 
         for node in doc.rootNode().childNodes():
             if node.type() != "grouplayer" or node.name() == "xxx":
@@ -71,32 +68,7 @@ class Transform_Mask_Positioner(Extension):
                         # fmt:on
         return rectangles
 
-    def get_reference_rectangle_single(self, group_node, vl_name_prefix):
-        """Extract all reference rectangles from vector layers. DRY man DRY"""
-        doc = Krita.instance().activeDocument()
-        rectangles = {}
-
-        for child in group_node.childNodes():
-            if (
-                child.name().startswith(vl_name_prefix)
-                and child.type() == "vectorlayer"
-            ):
-                mockup = child.name().split(vl_name_prefix)[-1].lower()
-                if child.shapes():
-                    bounds = child.shapes()[0].boundingBox()
-                    dpi = doc.resolution()
-
-                    # center x and y
-                    # fmt:off
-                    rectangles[mockup] = {
-                        "x": (bounds.x() + bounds.width() / 2) * dpi / self.VECTOR_LAYER_DPI,
-                        "y": (bounds.y() + bounds.height() / 2) * dpi / self.VECTOR_LAYER_DPI, 
-                        "width": bounds.width() * dpi / self.VECTOR_LAYER_DPI, 
-                        "height": bounds.height() * dpi / self.VECTOR_LAYER_DPI,
-                    }
-                    # fmt:on
-        return rectangles
-
+   
     def find_all_transform_masks(self, root_node):
         """Recursively find all transform masks in the layer tree."""
         masks = []
@@ -155,10 +127,10 @@ class Transform_Mask_Positioner(Extension):
         new_xml_str = f"<!DOCTYPE transform_params>\n{new_xml_str}"
         transform_mask.fromXML(new_xml_str)
 
-        # print("-" * 5)
-        # print(xml_str)
-        # print("-" * 5)
-        # print(new_xml_str)
+        print("-" * 5)
+        print(xml_str)
+        print("-" * 5)
+        print(new_xml_str)
 
     def fit_mask_to_rect(self, mask, rect):
         """Scale and position a transform mask to fit a reference rectangle (preserving aspect ratio)."""
@@ -203,7 +175,7 @@ class Transform_Mask_Positioner(Extension):
         doc.waitForDone()
         time.sleep(0.1)
 
-    def reset_transform_mask_xml(self, transform_mask):
+    def reset_transform_mask_xml(self, doc, transform_mask):
         """
         Reset a Krita transform mask to default (no transform).
         """
@@ -214,8 +186,10 @@ class Transform_Mask_Positioner(Extension):
         tc = root.find(".//transformedCenter")
         oc = root.find(".//originalCenter")
         if tc is not None and oc is not None:
-            tc.set("x", oc.get("x"))
-            tc.set("y", oc.get("y"))
+            oc.set("x", str(doc.width() / 2))
+            oc.set("y", str(doc.height() / 2))
+            tc.set("x", str(doc.width() / 2))
+            tc.set("y", str(doc.height() / 2))
 
         # Reset scale
         sx = root.find(".//scaleX")
@@ -277,6 +251,19 @@ class Transform_Mask_Positioner(Extension):
             == QMessageBox.No
         ):
             return
+        
+        # check process done before if it is stop
+        is_done_before = False
+        try:
+            is_done_before = doc.get(doc.fileName(), {}).get("is_Tmask_fitted_shared", None)
+            print(is_done_before)
+        except:
+            print("can not get is_done_before(aka is_Tmask_fitted_shared)")
+            
+        if is_done_before:
+            return
+        elif is_done_before is None:
+            print("can not get is_done_before(aka is_Tmask_fitted_shared)")
 
         # progress bar
         total_groups = sum(
@@ -323,7 +310,7 @@ class Transform_Mask_Positioner(Extension):
         # Process all transform masks
         for mask in self.find_all_transform_masks(doc.rootNode()):
             # reset the t-mask
-            self.reset_transform_mask_xml(mask)
+            self.reset_transform_mask_xml(doc, mask)
 
             mask_bounds = mask.bounds()  # design
             design_w = mask_bounds.width()
@@ -349,8 +336,40 @@ class Transform_Mask_Positioner(Extension):
             progress.setValue(progress.value() + 1)
             QApplication.processEvents()
 
+        # Extension 1: Set shared variable (whole krita instance not saved)
+        try:
+            doc.setdefault(doc.fileName(), {})["is_Tmask_fitted_shared"] = True
+        except:
+            print("is_Tmask_fitted_shared not set!!")
+            
         progress.close()
         QMessageBox.information(None, "Done", "Transform Masks fitted to rectangles!")
+        
+    def get_reference_rectangle_single(self, group_node, vl_name_prefix):
+            """Extract all reference rectangles from vector layers. DRY man DRY"""
+            doc = Krita.instance().activeDocument()
+            rectangles = {}
+
+            for child in group_node.childNodes():
+                if (
+                    child.name().startswith(vl_name_prefix)
+                    and child.type() == "vectorlayer"
+                ):
+                    mockup = child.name().split(vl_name_prefix)[-1].lower()
+                    if child.shapes():
+                        bounds = child.shapes()[0].boundingBox()
+                        dpi = doc.resolution()
+
+                        # center x and y
+                        # fmt:off
+                        rectangles[mockup] = {
+                            "x": (bounds.x() + bounds.width() / 2) * dpi / self.VECTOR_LAYER_DPI,
+                            "y": (bounds.y() + bounds.height() / 2) * dpi / self.VECTOR_LAYER_DPI, 
+                            "width": bounds.width() * dpi / self.VECTOR_LAYER_DPI, 
+                            "height": bounds.height() * dpi / self.VECTOR_LAYER_DPI,
+                        }
+                        # fmt:on
+            return rectangles
 
     def action_do_for_selected(self):
         doc = Krita.instance().activeDocument()
@@ -362,7 +381,7 @@ class Transform_Mask_Positioner(Extension):
             QMessageBox.question(
                 None,
                 "Transforming the One Transformmasks!!",
-                "Do you want to contunie?",
+                "Do you want to continue?",
                 QMessageBox.Yes | QMessageBox.No,
             )
             == QMessageBox.No
@@ -409,7 +428,7 @@ class Transform_Mask_Positioner(Extension):
             return
 
         # reset the t-mask
-        self.reset_transform_mask_xml(mask)
+        self.reset_transform_mask_xml(doc, mask)
 
         mask_bounds = mask.bounds()  # design
         design_w = mask_bounds.width()
@@ -430,5 +449,7 @@ class Transform_Mask_Positioner(Extension):
             if color in mask_name:
                 self.fit_mask_to_rect(mask, rect)
                 break
-
+            
         QMessageBox.information(None, "Done", "1T-mask fitted to rectangles!")
+
+		
